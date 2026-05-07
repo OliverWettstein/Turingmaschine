@@ -3,87 +3,46 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
- * Turing-Maschinen-Emulator  -  THIN Aufgabe 1
+ * Turing-Maschinen-Emulator — THIN Aufgabe 1 & 2
  *
- * Kodierungskonvention (Vorlesung Teil-6):
- *   Uebergang  d(qi, Xj) = (qk, Xl, Dm)  wird kodiert als:
- *       0^i  1  0^j  1  0^k  1  0^l  1  0^m
+ * Kodierung (Vorlesung Teil-6):  d(qi, Xj) = (qk, Xl, Dm)
+ *   → 0^i 1 0^j 1 0^k 1 0^l 1 0^m   |   Uebergaenge getrennt durch "11"
  *
- *   Uebergaenge werden durch "11" getrennt.
- *
- *   Zustaende  :  q1 = Startzustand, q2 = Akzeptierzustand (Halt)
- *   Symbole    :  X1 = '0',  X2 = '1',  X3 = '_' (Leerzeichen/Blank)
- *   Richtungen :  D1 = L (links),  D2 = R (rechts)
- *
- * Starten:  javac Emulator.java && java Emulator
+ * Symbole:    X1='0'  X2='1'  X3='_' (Blank)
+ * Richtungen: D1=L    D2=R
+ * Zustaende:  q0 = Startzustand (intern 1)  |  Halt = kein Uebergang definiert
  */
 public class Emulator {
 
-    // --- Konstanten -----------------------------------------------------------
+    // =========================================================================
+    // Konstanten
+    // =========================================================================
 
-    static final int BLANK        = 3;  // Leerzeichen-Symbol
-    static final int START_STATE  = 1;  // q1 = Startzustand
-    static final int ACCEPT_STATE = 2;  // q2 = Akzeptierzustand
-    static final int WINDOW       = 15; // Felder links/rechts vom Kopf
+    static final int BLANK  = 3;   // Symbol-Index fuer Leerzeichen
+    static final int START  = 1;   // Interner Startzustand (angezeigt als q0)
+    static final int WINDOW = 15;  // Sichtbare Felder links/rechts vom Kopf
 
-    static final String SEP  = "-".repeat(60);
-    static final String SEP2 = "=".repeat(60);
+    static final String LINE  = "-".repeat(60);
+    static final String LINE2 = "=".repeat(60);
 
+    // Vordefinierte TM-Kodierungen
     static final String T1 = "010010001010011000101010010110001001001010011000100010001010";
     static final String T2 = "1010010100100110101000101001100010010100100110001010010100";
+    static final String T3 = "0100101001001101000100100001011001010010101100100100001010011001000100000010001001100001010000101001100001001000010010011000010000100001000010011000010001000001001011000001001000001001011000001000010010000101100000010100000010100110000001001000000100100110000001000010000001000010011000000100010000000100001011000000010100000001010110000000100100000001001011000000010000100000001000010110000000100010000000010001001100000000101000000000100010011000000001000010000000000000010001001100000000010100000000010100110000000001000010000000000100001001100000000001010000000000101001100000000001001000000000001010011000000000010000100000000000001000010110000000000010010000000000010010011000000000001000010000000000010000100110000000000010001000000000000100101100000000000010010000000000001001011000000000000100001000000000000100001011000000000000101000000000010100110000000000000101000000000000010010110000000000000100001000000010000101100000000000000100100000000000000100010011000000000000001000010001000100";
 
-    // --- Uebergang ------------------------------------------------------------
+
+    // =========================================================================
+    // Datenmodell
+    // =========================================================================
 
     record Transition(int nextState, int writeSymbol, int direction) {}
 
-    // --- Parsing --------------------------------------------------------------
 
-    static Map<String, Transition> parseTM(String code) {
-        code = code.strip().replace("{", "").replace("}", "").replace(" ", "");
-        Map<String, Transition> transitions = new LinkedHashMap<>();
+    // =========================================================================
+    // Kern-Logik
+    // =========================================================================
 
-        String[] parts = code.split("11");
-        for (String part : parts) {
-            if (part.isEmpty()) continue;
-
-            String[] components = part.split("1", -1);
-            if (components.length != 5) {
-                System.out.printf("  [!] Ungueltig (erwartet 5 Teile, gefunden %d): '%s'%n",
-                        components.length, part);
-                continue;
-            }
-
-            int state     = components[0].length();
-            int symbol    = components[1].length();
-            int nextState = components[2].length();
-            int write     = components[3].length();
-            int direction = components[4].length();
-
-            String key = state + "," + symbol;
-            if (transitions.containsKey(key))
-                System.out.printf("  [!] Doppelter Uebergang fuer (q%d, X%d) - wird ueberschrieben%n",
-                        state, symbol);
-
-            transitions.put(key, new Transition(nextState, write, direction));
-        }
-        return transitions;
-    }
-
-    static void printTransitions(Map<String, Transition> transitions) {
-        System.out.println("Uebergangsfunktion:");
-        for (var entry : transitions.entrySet()) {
-            String[] kp  = entry.getKey().split(",");
-            int q        = Integer.parseInt(kp[0]);
-            int x        = Integer.parseInt(kp[1]);
-            Transition t = entry.getValue();
-            String dir   = t.direction() == 1 ? "L" : (t.direction() == 2 ? "R" : "D" + t.direction());
-            System.out.printf("  d(q%d, %c) = (q%d, %c, %s)%n",
-                    q, symChar(x), t.nextState(), symChar(t.writeSymbol()), dir);
-        }
-    }
-
-    // --- Band-Hilfsfunktionen -------------------------------------------------
-
+    /** Wandelt Symbol-Index in lesbares Zeichen um. */
     static char symChar(int sym) {
         return switch (sym) {
             case 1  -> '0';
@@ -92,6 +51,33 @@ public class Emulator {
         };
     }
 
+    /** Parst eine TM-Kodierung in eine Uebergangstabelle. */
+    static Map<String, Transition> parseTM(String code) {
+        code = code.strip().replace("{", "").replace("}", "").replace(" ", "");
+        Map<String, Transition> table = new LinkedHashMap<>();
+
+        for (String part : code.split("11")) {
+            if (part.isEmpty()) continue;
+
+            String[] c = part.split("1", -1);
+            if (c.length != 5) {
+                System.out.printf("  [!] Ungueltig (%d Teile statt 5): '%s'%n", c.length, part);
+                continue;
+            }
+
+            int state  = c[0].length();
+            int symbol = c[1].length();
+            String key = state + "," + symbol;
+
+            if (table.containsKey(key))
+                System.out.printf("  [!] Doppelter Uebergang (q%d, X%d) — wird ueberschrieben%n", state - 1, symbol);
+
+            table.put(key, new Transition(c[2].length(), c[3].length(), c[4].length()));
+        }
+        return table;
+    }
+
+    /** Legt einen Eingabe-String als Band-Map an (Position → Symbol-Index). */
     static Map<Integer, Integer> parseTape(String raw) {
         Map<Integer, Integer> tape = new HashMap<>();
         for (int i = 0; i < raw.length(); i++) {
@@ -101,6 +87,7 @@ public class Emulator {
         return tape;
     }
 
+    /** Liest alle Nicht-Blank-Symbole vom Band als String. */
     static String getResult(Map<Integer, Integer> tape) {
         if (tape.isEmpty()) return "";
         int lo = Collections.min(tape.keySet());
@@ -113,156 +100,182 @@ public class Emulator {
         return sb.toString();
     }
 
-    // --- Bandanzeige (Anforderungen b-e) --------------------------------------
 
-    static void display(Map<Integer, Integer> tape, int head, int state, int steps) {
-        int lo = Math.min(head - WINDOW,
-                tape.isEmpty() ? head - 1 : Collections.min(tape.keySet()) - 1);
-        int hi = Math.max(head + WINDOW,
-                tape.isEmpty() ? head + 1 : Collections.max(tape.keySet()) + 1);
+    // =========================================================================
+    // Simulation
+    // =========================================================================
 
-        StringBuilder band = new StringBuilder();
-        for (int pos = lo; pos <= hi; pos++) {
-            char ch = symChar(tape.getOrDefault(pos, BLANK));
-            if (pos == head) band.append('[').append(ch).append(']');
-            else             band.append(' ').append(ch).append(' ');
-        }
-
-        System.out.printf("Schritt %6d | Zustand: q%-2d | Kopf @ Position %5d%n",
-                steps, state, head);
-        System.out.println("Band:  " + band);
-        System.out.println();
-    }
-
-    // --- Simulation -----------------------------------------------------------
-
-    static void simulate(Map<String, Transition> transitions,
+    static void simulate(Map<String, Transition> table,
                          Map<Integer, Integer> inputTape,
                          boolean stepMode,
-                         Scanner scanner) {
+                         Scanner sc) {
         Map<Integer, Integer> tape = new HashMap<>(inputTape);
-        int state = START_STATE;
+        int state = START;
         int head  = 0;
         int steps = 0;
 
-        String eingabe = getResult(tape);
-        System.out.println("\n" + SEP);
-        System.out.println("Modus   : " + (stepMode ? "Schritt-Modus" : "Lauf-Modus"));
-        System.out.println("Eingabe : " + (eingabe.isEmpty() ? "(leer)" : eingabe));
-        System.out.println(SEP + "\n");
-
-        if (stepMode) {
-            display(tape, head, state, steps);
-            System.out.print("  [ENTER] fuer naechsten Schritt ...");
-            scanner.nextLine();
-        }
+        printSimHeader(tape, stepMode);
+        if (stepMode) promptStep(tape, head, state, steps, sc);
 
         while (true) {
             int symbol = tape.getOrDefault(head, BLANK);
+            Transition t = table.get(state + "," + symbol);
 
-            // Abbruchbedingungen
-            if (state == ACCEPT_STATE) {
-                System.out.printf("[OK]    AKZEPTIERT - Zustand q%d nach %d Schritten.%n%n",
-                        state, steps);
+            if (t == null) {
+                System.out.printf("%n[HALT]  Kein Uebergang fuer (q%d, %c) nach %d Schritten.%n%n",
+                        state - 1, symChar(symbol), steps);
                 break;
             }
 
-            String key = state + "," + symbol;
-            if (!transitions.containsKey(key)) {
-                System.out.printf("[STOP]  Kein Uebergang fuer (q%d, %c) nach %d Schritten.%n%n",
-                        state, symChar(symbol), steps);
-                break;
-            }
-
-            // Uebergang ausfuehren
-            Transition t = transitions.get(key);
             tape.put(head, t.writeSymbol());
             head  += (t.direction() == 2 ? 1 : -1);
             state  = t.nextState();
             steps++;
 
-            if (stepMode) {
-                display(tape, head, state, steps);
-                System.out.print("  [ENTER] fuer naechsten Schritt ...");
-                scanner.nextLine();
-            }
+            if (stepMode) promptStep(tape, head, state, steps, sc);
         }
 
-        // Endergebnis
-        String result = getResult(tape);
-        System.out.println(SEP);
-        System.out.println("a) Ergebnis (Band)  : " + (result.isEmpty() ? "(leer)" : result));
-        System.out.println("b) Endzustand       : q" + state);
-        System.out.println("e) Schritte gesamt  : " + steps);
-        System.out.println(SEP);
-        display(tape, head, state, steps);
+        printResult(tape, state, steps);
+        printBand(tape, head, state, steps);
     }
 
-    // --- Hauptprogramm --------------------------------------------------------
+
+    // =========================================================================
+    // Ausgabe
+    // =========================================================================
+
+    /** Gibt alle Uebergaenge der Tabelle lesbar aus. */
+    static void printTransitions(Map<String, Transition> table) {
+        System.out.println("Uebergangsfunktion:");
+        for (var e : table.entrySet()) {
+            String[] k = e.getKey().split(",");
+            int q = Integer.parseInt(k[0]);
+            int x = Integer.parseInt(k[1]);
+            Transition t = e.getValue();
+            String dir = t.direction() == 1 ? "L" : (t.direction() == 2 ? "R" : "D" + t.direction());
+            System.out.printf("  d(q%d, %c) = (q%d, %c, %s)%n",
+                    q - 1, symChar(x), t.nextState() - 1, symChar(t.writeSymbol()), dir);
+        }
+    }
+
+    /** Zeigt Bandinhalt mit Kopfmarkierung — Anforderungen b, c, d, e. */
+    static void printBand(Map<Integer, Integer> tape, int head, int state, int steps) {
+        int lo = Math.min(head - WINDOW, tape.isEmpty() ? head - 1 : Collections.min(tape.keySet()) - 1);
+        int hi = Math.max(head + WINDOW, tape.isEmpty() ? head + 1 : Collections.max(tape.keySet()) + 1);
+
+        StringBuilder band = new StringBuilder();
+        for (int pos = lo; pos <= hi; pos++) {
+            char ch = symChar(tape.getOrDefault(pos, BLANK));
+            band.append(pos == head ? "[" + ch + "]" : " " + ch + " ");
+        }
+
+        System.out.printf("Schritt %6d | Zustand: q%-2d | Kopf @ Position %5d%n", steps, state - 1, head);
+        System.out.println("Band:  " + band);
+        System.out.println();
+    }
+
+    /** Zeigt Modus und Eingabe vor dem Start. */
+    static void printSimHeader(Map<Integer, Integer> tape, boolean stepMode) {
+        String eingabe = getResult(tape);
+        System.out.println("\n" + LINE);
+        System.out.println("Modus   : " + (stepMode ? "Schritt-Modus" : "Lauf-Modus"));
+        System.out.println("Eingabe : " + (eingabe.isEmpty() ? "(leer)" : eingabe));
+        System.out.println(LINE + "\n");
+    }
+
+    /** Zeigt das Endergebnis — Anforderung a, b, e. */
+    static void printResult(Map<Integer, Integer> tape, int state, int steps) {
+        String result = getResult(tape);
+        System.out.println(LINE);
+        System.out.println("a) Ergebnis (Band)  : " + (result.isEmpty() ? "(leer)" : result));
+        System.out.println("a) Ergebnis (Laenge): " + result.length());
+        System.out.println("b) Endzustand       : q" + (state - 1));
+        System.out.println("e) Schritte gesamt  : " + steps);
+        System.out.println(LINE);
+    }
+
+    /** Zeigt Band und wartet auf Enter (nur im Step-Modus). */
+    static void promptStep(Map<Integer, Integer> tape, int head, int state, int steps, Scanner sc) {
+        printBand(tape, head, state, steps);
+        System.out.print("  [ENTER] fuer naechsten Schritt ...");
+        sc.nextLine();
+    }
+
+
+    // =========================================================================
+    // Dialog / Hauptprogramm
+    // =========================================================================
 
     public static void main(String[] args) throws Exception {
-        // UTF-8 Ausgabe erzwingen (fuer IntelliJ und Windows-Konsole)
         System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
         System.setIn(new java.io.BufferedInputStream(System.in));
-        Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
+        Scanner sc = new Scanner(System.in, StandardCharsets.UTF_8);
 
-        System.out.println(SEP2);
-        System.out.println("   Turing-Maschinen-Emulator  -  THIN Aufgabe 1");
-        System.out.println(SEP2);
+        while (true) {
+            System.out.println(LINE2);
+            System.out.println("   Turing-Maschinen-Emulator  —  THIN Aufgabe 1 & 2");
+            System.out.println(LINE2);
 
-        // TM-Code eingeben
-        System.out.println("\nTM-Kodierung eingeben");
-        System.out.println("  (oder '1' / '2' fuer Testbeispiele aus der Vorlesung):");
-        System.out.print("  > ");
-        String rawCode = scanner.nextLine().strip();
+            // --- TM-Kodierung einlesen ---
+            System.out.println("\nTM-Kodierung eingeben");
+            System.out.println("  (oder 'T1'/'T2' fuer Vorlesungsbeispiele, 'T3' fuer Aufgabe 2):");
+            System.out.print("  > ");
+            String rawCode = sc.nextLine().strip();
 
-        String tmCode;
-        if (rawCode.equalsIgnoreCase("T1")) {
-            tmCode = T1;
-            System.out.println("  T1 = " + T1);
-        } else if (rawCode.equalsIgnoreCase("T2")) {
-            tmCode = T2;
-            System.out.println("  T2 = " + T2);
-        } else {
-            tmCode = rawCode;
-        }
+            String tmCode = switch (rawCode.toUpperCase()) {
+                case "T1" -> { System.out.println("  T1 = " + T1); yield T1; }
+                case "T2" -> { System.out.println("  T2 = " + T2); yield T2; }
+                case "T3" -> { System.out.println("  T3 = " + T3); yield T3; }
+                default   -> rawCode;
+            };
 
-        System.out.println();
-        Map<String, Transition> transitions = parseTM(tmCode);
-
-        if (transitions.isEmpty()) {
-            System.out.println("Fehler: Keine gueltigen Uebergaenge gefunden.");
-            return;
-        }
-        printTransitions(transitions);
-
-        // Eingabe
-        System.out.println("\nEingabe auf dem Band:");
-        System.out.println("  Binaerstring direkt eingeben (z. B. '101')");
-        System.out.println("  oder Dezimalzahl eingeben (wird in Binaer umgewandelt):");
-        System.out.print("  > ");
-        String rawInput = scanner.nextLine().strip();
-
-        // Dezimal -> Binaer, wenn keine reine Binaerfolge
-        if (!rawInput.isEmpty() && !rawInput.matches("[01]*")) {
-            try {
-                long n = Long.parseLong(rawInput);
-                rawInput = Long.toBinaryString(n);
-                System.out.printf("  Dezimal %d -> Binaer: %s%n", n, rawInput);
-            } catch (NumberFormatException e) {
-                System.out.println("  [!] Ungueltige Eingabe, wird als leer behandelt.");
-                rawInput = "";
+            System.out.println();
+            Map<String, Transition> table = parseTM(tmCode);
+            if (table.isEmpty()) {
+                System.out.println("Fehler: Keine gueltigen Uebergaenge gefunden.");
+                continue;
             }
+            printTransitions(table);
+
+            // --- Bandeingabe ---
+            System.out.println("\nEingabe auf dem Band (Dezimalzahl):");
+            System.out.print("  > ");
+            String rawInput = sc.nextLine().strip();
+
+            System.out.println("Kodierung: (b)inaer oder (u)naer? [b/u]");
+            System.out.print("  > ");
+            boolean unary = sc.nextLine().strip().equalsIgnoreCase("u");
+
+            if (!rawInput.isEmpty()) {
+                try {
+                    long n = Long.parseLong(rawInput);
+                    if (unary) {
+                        rawInput = "1".repeat((int) n);
+                        System.out.printf("  Dezimal -> Unaer:  %s%n", rawInput);
+                    } else {
+                        rawInput = Long.toBinaryString(n);
+                        System.out.printf("  Dezimal -> Binaer: %s%n", rawInput);
+                    }
+                } catch (NumberFormatException e) {
+                    System.out.println("  [!] Ungueltige Eingabe — wird als leer behandelt.");
+                    rawInput = "";
+                }
+            }
+
+            // --- Modus waehlen ---
+            System.out.println("\nModus: (s)chritt-Modus  oder  (l)auf-Modus? [s/l]");
+            System.out.print("  > ");
+            boolean stepMode = sc.nextLine().strip().equalsIgnoreCase("s");
+
+            // --- Simulation starten ---
+            simulate(table, parseTape(rawInput), stepMode, sc);
+
+            // --- Neustart oder Beenden ---
+            System.out.println("\n" + LINE2);
+            System.out.println("  [R] Neustart   |   beliebige Taste + ENTER zum Beenden");
+            System.out.print("  > ");
+            if (!sc.nextLine().strip().equalsIgnoreCase("r")) break;
+            System.out.println();
         }
-
-        Map<Integer, Integer> tape = parseTape(rawInput);
-
-        // Modus
-        System.out.println("\nModus: (s)chritt-Modus  oder  (l)auf-Modus? [s/l]");
-        System.out.print("  > ");
-        String modeInput = scanner.nextLine().strip().toLowerCase();
-        boolean stepMode = modeInput.equals("s");
-
-        simulate(transitions, tape, stepMode, scanner);
     }
 }
