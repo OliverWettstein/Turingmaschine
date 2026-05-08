@@ -41,7 +41,6 @@ public class TMCore {
         return table;
     }
 
-    // Eingabe-String → Band-Map (Position → Symbol-Index)
     static Map<Integer, Integer> parseTape(String raw) {
         Map<Integer, Integer> tape = new HashMap<>();
         for (int i = 0; i < raw.length(); i++) {

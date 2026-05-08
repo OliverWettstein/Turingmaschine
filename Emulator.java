@@ -4,27 +4,25 @@ import java.util.*;
 
 public class Emulator {
 
-    static final int START = 1;  // Interner Startzustand (angezeigt als q0)
-
-
-    // =========================================================================
-    // Simulation
-    // =========================================================================
+    static final int START = 1;
 
     static void simulate(Map<String, Transition> table,
                          Map<Integer, Integer> inputTape,
                          boolean stepMode,
                          Scanner sc) {
         Map<Integer, Integer> tape = new HashMap<>(inputTape);
-        int state = START;
-        int head  = 0;
-        int steps = 0;
+        int state = START; // aktueller Zustand
+        int head  = 0;     // aktuelle Kopfposition
+        int steps = 0;     // Schrittanzahl
 
         TMDisplay.printSimHeader(tape, stepMode);
         if (stepMode) TMDisplay.promptStep(tape, head, state, steps, sc);
 
         while (true) {
+            // Symbol unter dem Kopf lesen
             int symbol = tape.getOrDefault(head, TMCore.BLANK);
+
+            // Uebergang
             Transition t = table.get(state + "," + symbol);
 
             if (t == null) {
@@ -33,6 +31,7 @@ public class Emulator {
                 break;
             }
 
+            // Uebergang ausfuehren
             tape.put(head, t.writeSymbol());
             head  += (t.direction() == 2 ? 1 : -1);
             state  = t.nextState();
@@ -44,11 +43,6 @@ public class Emulator {
         TMDisplay.printResult(tape, state, steps);
         TMDisplay.printBand(tape, head, state, steps);
     }
-
-
-    // =========================================================================
-    // Dialog / Hauptprogramm
-    // =========================================================================
 
     public static void main(String[] args) throws Exception {
         System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
